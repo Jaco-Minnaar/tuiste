@@ -36,6 +36,19 @@ pub const Caps = caps.Caps;
 pub const ctlseqs = @import("ctlseqs.zig");
 pub const unicode = @import("unicode.zig");
 
+/// Opt-in panic handler: restores the terminal (cooked mode, main screen,
+/// visible cursor) before the default panic output, so a crash never leaves
+/// the user's shell raw with the message invisible on the alt screen.
+/// In your application's root source file:
+///
+///     pub const panic = tuiste.panic;
+pub const panic = std.debug.FullPanic(panicWithRestore);
+
+fn panicWithRestore(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    Tty.panicRestore();
+    std.debug.defaultPanic(msg, first_trace_addr);
+}
+
 test {
     std.testing.refAllDecls(@This());
 }

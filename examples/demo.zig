@@ -3,6 +3,9 @@
 const std = @import("std");
 const tuiste = @import("tuiste");
 
+/// Restore the terminal before panic output (try it: press p).
+pub const panic = tuiste.panic;
+
 pub fn main(init: std.process.Init) !void {
     var debug_alloc: std.heap.DebugAllocator(.{}) = .init;
     defer _ = debug_alloc.deinit();
@@ -45,6 +48,7 @@ pub fn main(init: std.process.Init) !void {
         switch (ev) {
             .key => |k| {
                 if (k.matches('q', .{}) or k.matches('c', .{ .ctrl = true })) break;
+                if (k.matches('p', .{})) @panic("deliberate demo panic — the terminal should be usable now");
                 last = std.fmt.bufPrint(&last_buf, "key cp={d} '{u}' ctrl={} alt={} shift={}", .{
                     k.codepoint,
                     if (k.codepoint >= ' ' and k.codepoint != 127) k.codepoint else ' ',

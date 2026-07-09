@@ -1,7 +1,6 @@
 //! Owns /dev/tty: raw mode, size queries, and buffered output. Restores the
-//! termios state it found on deinit.
-//! TODO: hook the restore into a panic handler so a crash never leaves the
-//! user's terminal raw (needs an opt-in override of the root panic fn).
+//! termios state it found on deinit — and, if the application opts into
+//! `tuiste.panic` in its root file, on panic too (see `panicRestore`).
 const Tty = @This();
 
 const std = @import("std");
@@ -9,6 +8,7 @@ const Io = std.Io;
 const posix = std.posix;
 const linux = std.os.linux;
 const event = @import("event.zig");
+const ctlseqs = @import("ctlseqs.zig");
 
 io: Io,
 file: Io.File,
@@ -17,6 +17,37 @@ write_buf: []u8,
 saved_termios: ?posix.termios = null,
 
 const write_buf_size = 32 * 1024;
+
+/// What `panicRestore` needs. A module-level global (not a Tty field)
+/// because a panic handler has no way to reach an instance; one terminal
+/// per process is assumed.
+var panic_restore_state: ?struct {
+    fd: posix.fd_t,
+    termios: posix.termios,
+} = null;
+
+/// Best-effort terminal restore for panic (or signal) context: no
+/// allocation, no `Io`, raw fd writes only. Unwinds every mode the library
+/// may have set — the sequences are harmless if a mode wasn't active.
+/// No-op unless `makeRaw` is currently in effect. Safe to call twice.
+pub fn panicRestore() void {
+    const state = panic_restore_state orelse return;
+    panic_restore_state = null;
+    // Alt screen last, so whatever gets printed next (the panic message)
+    // lands on the user's real screen, after the cursor is visible again.
+    const unwind = ctlseqs.kitty_kb_pop ++ ctlseqs.mouse_off ++
+        ctlseqs.bracketed_paste_off ++ ctlseqs.focus_off ++
+        ctlseqs.sgr_reset ++ ctlseqs.show_cursor ++ ctlseqs.exit_alt_screen;
+    // Raw syscall: std.posix has no write wrapper in 0.16, and panic context
+    // wants the most primitive path anyway.
+    var written: usize = 0;
+    while (written < unwind.len) {
+        const rc = linux.write(state.fd, unwind[written..].ptr, unwind.len - written);
+        if (posix.errno(rc) != .SUCCESS) break;
+        written += rc;
+    }
+    posix.tcsetattr(state.fd, .FLUSH, state.termios) catch {};
+}
 
 pub fn init(gpa: std.mem.Allocator, io: Io) !Tty {
     const file = try Io.Dir.openFileAbsolute(io, "/dev/tty", .{ .mode = .read_write });
@@ -54,6 +85,7 @@ pub fn flush(self: *Tty) !void {
 pub fn makeRaw(self: *Tty) !void {
     const orig = try posix.tcgetattr(self.fd());
     self.saved_termios = orig;
+    panic_restore_state = .{ .fd = self.fd(), .termios = orig };
 
     var raw = orig;
     raw.iflag.IGNBRK = false;
@@ -83,6 +115,7 @@ pub fn restore(self: *Tty) void {
         posix.tcsetattr(self.fd(), .FLUSH, t) catch {};
         self.saved_termios = null;
     }
+    panic_restore_state = null;
 }
 
 pub fn size(self: *const Tty) !event.Size {
