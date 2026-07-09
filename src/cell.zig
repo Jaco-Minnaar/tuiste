@@ -37,9 +37,11 @@ pub const Style = struct {
 
 pub const Cell = struct {
     /// UTF-8 bytes of one grapheme cluster, stored inline. Clusters that
-    /// don't fit (long ZWJ emoji sequences) are replaced with U+FFFD.
-    /// TODO: overflow pool / interning for oversized graphemes.
+    /// don't fit are interned in a `GraphemePool` (see `initPooled`); with
+    /// no pool available they degrade to U+FFFD.
     bytes: [max_grapheme_bytes]u8 = [_]u8{' '} ++ [_]u8{0} ** (max_grapheme_bytes - 1),
+    /// Byte count of the inline grapheme, or `overflow_len` when `bytes`
+    /// holds a pool index instead.
     len: u8 = 1,
     /// Terminal columns this cell occupies. 0 marks the spacer cell that
     /// sits behind the second column of a wide grapheme.
@@ -47,6 +49,10 @@ pub const Cell = struct {
     style: Style = .{},
 
     pub const max_grapheme_bytes = 15;
+
+    /// Sentinel `len`: the grapheme lives in the pool and bytes[0..4] hold
+    /// its little-endian index.
+    pub const overflow_len: u8 = 0xff;
 
     /// The placeholder occupying the second column of a wide grapheme.
     pub const spacer: Cell = .{ .len = 0, .width = 0 };
@@ -64,14 +70,32 @@ pub const Cell = struct {
         return c;
     }
 
+    /// A cell whose grapheme is interned in a `GraphemePool` at `index`.
+    pub fn initPooled(index: u32, width: u2, style: Style) Cell {
+        var c: Cell = .{ .len = overflow_len, .width = width, .style = style };
+        std.mem.writeInt(u32, c.bytes[0..4], index, .little);
+        return c;
+    }
+
+    /// Pool index of an overflowed grapheme, or null for inline cells.
+    pub fn poolIndex(self: *const Cell) ?u32 {
+        if (self.len != overflow_len) return null;
+        return std.mem.readInt(u32, self.bytes[0..4], .little);
+    }
+
+    /// The inline grapheme bytes. Pooled cells return U+FFFD here — resolve
+    /// them through `Surface.graphemeOf`, which has the pool.
     pub fn grapheme(self: *const Cell) []const u8 {
+        if (self.len == overflow_len) return "\u{FFFD}";
         return self.bytes[0..self.len];
     }
 
     pub fn eql(a: Cell, b: Cell) bool {
-        return a.len == b.len and a.width == b.width and
-            std.mem.eql(u8, a.bytes[0..a.len], b.bytes[0..b.len]) and
-            a.style.eql(b.style);
+        if (a.len != b.len or a.width != b.width or !a.style.eql(b.style)) return false;
+        // Pooled graphemes intern to a unique index, so index equality is
+        // content equality (assuming one pool, which the Renderer guarantees).
+        const n = if (a.len == overflow_len) 4 else a.len;
+        return std.mem.eql(u8, a.bytes[0..n], b.bytes[0..n]);
     }
 };
 

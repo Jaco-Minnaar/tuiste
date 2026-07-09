@@ -34,11 +34,11 @@ Dependency arrows (what may import what):
 
 ```
 Terminal ─→ Tty, caps, Renderer, Surface, Loop (detectCaps only)
-Renderer ─→ Surface, cell, ctlseqs, caps
+Renderer ─→ Surface, cell, ctlseqs, caps, GraphemePool
 Loop     ─→ Tty, input/Parser, event
 Parser   ─→ event
-Surface  ─→ cell, unicode
-ctlseqs, cell, event ─→ nothing internal
+Surface  ─→ cell, unicode, GraphemePool
+ctlseqs, cell, event, GraphemePool ─→ nothing internal
 ```
 
 Two invariants carry the design — do not break them:
@@ -51,7 +51,7 @@ Other structural decisions:
 - Key/event types (`event.zig`) are shaped around the kitty keyboard protocol (codepoint + mods + press/repeat/release + shifted/base alternates, functional keys as kitty PUA codepoints); legacy escape input is normalized *into* that shape by the Parser, never the reverse.
 - `render()` is allocation-free after init/resize; buffers are sized up front. Keep it that way — it's a stated API commitment.
 - Wide graphemes occupy two cells: the glyph cell plus a width-0 spacer cell behind it. The Renderer skips spacers when emitting; `Renderer.invalidate()` fills the front buffer with a never-equal sentinel cell (`len == 0, width == 1`) to force full repaints.
-- Cells store grapheme bytes inline (max 15); oversized clusters degrade to U+FFFD (overflow pool is a known TODO in `cell.zig`).
+- Cells store grapheme bytes inline (max 15). Longer clusters (ZWJ emoji) intern into the Renderer's `GraphemePool`, shared by both surfaces: the cell stores a u32 index (`len == overflow_len` sentinel, no size growth), equal bytes always intern to the same index, so the diff stays a value compare. Interning happens at `writeText` (draw path, may allocate — render stays allocation-free); on OOM or with a pool-less standalone Surface it degrades to U+FFFD rather than erroring. Resolve pooled cells via `Surface.graphemeOf`, never `Cell.grapheme` (which returns U+FFFD for them). Pool entries live for the Renderer's lifetime.
 - Unicode width/segmentation comes from the `zg` dependency, wrapped in `src/unicode.zig` so the rest of the library never imports zg directly — keep it that way so the dep stays swappable.
 - Capability detection: `Terminal.detectCaps(&loop, timeout_ms)` writes the queries from `caps.query_sequence` (kitty `CSI ? u`, DECRQM 2026, DA1 last as a fence — every terminal answers DA1, and responses arrive in order), then folds `Event.cap` responses into `term.caps` via `Caps.apply`. User input racing the detection round-trip is stashed with `Loop.pushDeferred` and replayed by later `nextEvent` calls. Detection MUST read via `Loop.pollEvent` (not `nextEvent`): pollEvent bypasses the deferred queue, and detection is the producer of deferred events — reading them back livelocks on the first stashed keypress. A terminal that answers nothing leaves the conservative defaults after the timeout.
 - Panic-safe restore is opt-in: applications alias `pub const panic = tuiste.panic;` in their root file (the demo does). It calls `Tty.panicRestore()` — module-global state, raw syscalls only, no allocation, alt-screen exit last so the panic message prints on the real screen — before `std.debug.defaultPanic`. A library cannot install this itself; only the root module's `panic` decl counts.
@@ -65,7 +65,6 @@ Other structural decisions:
 - `std.posix.write` no longer exists (only `read` survived the Io migration); use the `std.os.linux.write` syscall directly in contexts that can't take an `Io` (signal handlers, panic handlers).
 - `std.time.Timer` is gone; measure elapsed time with `std.Io.Clock.now(.awake, io)` + `durationTo(...).toMilliseconds()`.
 
-## Known TODOs (marked in source)
+## Known TODOs
 
-- `caps.zig`: verify truecolor via XTGETTCAP (needs DCS response parsing in the Parser).
-- `cell.zig`: overflow storage for graphemes longer than 15 bytes (ZWJ emoji).
+See `TODO.md` (kept current; items are also marked in source with `TODO` comments).

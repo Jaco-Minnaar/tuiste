@@ -25,7 +25,7 @@ pub fn main(init: std.process.Init) !void {
         var frame = term.frame();
         _ = frame.writeText(2, 1, "tuiste scaffold demo", .{ .attrs = .{ .bold = true } });
         _ = frame.writeText(2, 2, "press q or ctrl+c to quit", .{ .fg = .{ .indexed = 244 } });
-        _ = frame.writeText(2, 4, "unicode: héllo 宽字符 👍", .{ .fg = .{ .ansi = 2 } });
+        _ = frame.writeText(2, 4, "unicode: héllo 宽字符 👍 👨‍👩‍👧‍👦", .{ .fg = .{ .ansi = 2 } });
 
         var line_buf: [64]u8 = undefined;
         const status = std.fmt.bufPrint(&line_buf, "size: {d}x{d}   events: {d}", .{

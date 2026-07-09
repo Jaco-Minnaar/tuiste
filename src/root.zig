@@ -16,6 +16,7 @@ pub const Color = cell.Color;
 pub const Attrs = cell.Attrs;
 
 pub const Surface = @import("Surface.zig");
+pub const GraphemePool = @import("GraphemePool.zig");
 pub const Tty = @import("Tty.zig");
 pub const Renderer = @import("Renderer.zig");
 pub const Terminal = @import("Terminal.zig");

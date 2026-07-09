@@ -11,27 +11,40 @@ const Cell = cell_mod.Cell;
 const Style = cell_mod.Style;
 const ctlseqs = @import("ctlseqs.zig");
 const Caps = @import("caps.zig").Caps;
+const GraphemePool = @import("GraphemePool.zig");
 
 /// What is currently on screen.
 front: Surface,
 /// What user code draws into for the next frame (via `Terminal.frame`).
 back: Surface,
+/// Shared by both surfaces so pooled cells diff by index. Heap-allocated
+/// because the surfaces hold pointers to it and Renderer moves by value.
+pool: *GraphemePool,
 
 /// A cell that can never equal a drawn cell (back cells always have len >= 1
 /// except spacers, which carry width 0 in both buffers consistently).
 const invalid_cell: Cell = .{ .len = 0, .width = 1 };
 
 pub fn init(gpa: std.mem.Allocator, cols: u16, rows: u16) !Renderer {
+    const pool = try gpa.create(GraphemePool);
+    errdefer gpa.destroy(pool);
+    pool.* = GraphemePool.init(gpa);
+    errdefer pool.deinit();
+
     var front = try Surface.init(gpa, cols, rows);
     errdefer front.deinit(gpa);
-    const back = try Surface.init(gpa, cols, rows);
+    var back = try Surface.init(gpa, cols, rows);
     front.fill(invalid_cell);
-    return .{ .front = front, .back = back };
+    front.pool = pool;
+    back.pool = pool;
+    return .{ .front = front, .back = back, .pool = pool };
 }
 
 pub fn deinit(self: *Renderer, gpa: std.mem.Allocator) void {
     self.front.deinit(gpa);
     self.back.deinit(gpa);
+    self.pool.deinit();
+    gpa.destroy(self.pool);
     self.* = undefined;
 }
 
@@ -71,7 +84,7 @@ pub fn render(self: *Renderer, writer: *Io.Writer, caps: Caps) !void {
                 try ctlseqs.sgr(writer, b.style);
                 last_style = b.style;
             }
-            try writer.writeAll(b.grapheme());
+            try writer.writeAll(self.back.graphemeOf(b));
             cx = @as(u32, x) + b.width;
             cy = y;
         }
@@ -104,6 +117,29 @@ test "render diffs only changed cells" {
     const out = w3.buffered();
     try std.testing.expect(std.mem.indexOf(u8, out, "\x1b[2;2H") != null);
     try std.testing.expect(std.mem.indexOf(u8, out, "A") != null);
+}
+
+test "pooled graphemes render full bytes and diff stable" {
+    const gpa = std.testing.allocator;
+    var r = try Renderer.init(gpa, 6, 1);
+    defer r.deinit(gpa);
+
+    var buf: [4096]u8 = undefined;
+    var w: Io.Writer = .fixed(&buf);
+    try r.render(&w, .{}); // settle first frame
+
+    const family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}";
+    _ = r.back.writeText(0, 0, family, .{});
+    var w2: Io.Writer = .fixed(&buf);
+    try r.render(&w2, .{});
+    try std.testing.expect(std.mem.indexOf(u8, w2.buffered(), family) != null);
+
+    // Redrawing the identical frame emits nothing: pooled cells diff by index.
+    r.back.clear();
+    _ = r.back.writeText(0, 0, family, .{});
+    var w3: Io.Writer = .fixed(&buf);
+    try r.render(&w3, .{});
+    try std.testing.expectEqualStrings("", w3.buffered());
 }
 
 test "adjacent cells reuse cursor position" {
