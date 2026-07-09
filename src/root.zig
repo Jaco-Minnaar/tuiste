@@ -24,6 +24,7 @@ pub const Parser = @import("input/Parser.zig");
 
 pub const event = @import("event.zig");
 pub const Event = event.Event;
+pub const Cap = event.Cap;
 pub const Key = event.Key;
 pub const Mods = event.Mods;
 pub const Mouse = event.Mouse;

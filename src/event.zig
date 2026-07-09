@@ -15,8 +15,21 @@ pub const Event = union(enum) {
     focus_out,
     paste_start,
     paste_end,
-    // TODO: capability-query responses (DA1, kitty CSI ? u, XTGETTCAP)
-    // surfaced as events so caps.zig can consume them via the loop.
+    cap: Cap,
+};
+
+/// A capability-query response from the terminal. `Terminal.detectCaps`
+/// consumes these; applications only see them if they run detection manually.
+pub const Cap = union(enum) {
+    /// Terminal answered kitty `CSI ? u` — the protocol is supported.
+    /// Payload is the currently-set progressive enhancement flags.
+    kitty_keyboard: u8,
+    /// DECRQM report: mode number and its value
+    /// (0 = not recognized, 1 = set, 2 = reset, 3/4 = permanently so).
+    decrqm: struct { mode: u16, value: u8 },
+    /// Primary device attributes reply — the end-of-detection fence:
+    /// every terminal answers DA1, and responses arrive in order.
+    da1,
 };
 
 /// Kitty-protocol modifier bits (value - 1 on the wire), in wire order.

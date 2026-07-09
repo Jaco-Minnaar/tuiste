@@ -33,7 +33,7 @@ Immediate mode with a diffed double buffer: user code redraws the whole frame in
 Dependency arrows (what may import what):
 
 ```
-Terminal ─→ Tty, caps, Renderer, Surface
+Terminal ─→ Tty, caps, Renderer, Surface, Loop (detectCaps only)
 Renderer ─→ Surface, cell, ctlseqs, caps
 Loop     ─→ Tty, input/Parser, event
 Parser   ─→ event
@@ -53,7 +53,7 @@ Other structural decisions:
 - Wide graphemes occupy two cells: the glyph cell plus a width-0 spacer cell behind it. The Renderer skips spacers when emitting; `Renderer.invalidate()` fills the front buffer with a never-equal sentinel cell (`len == 0, width == 1`) to force full repaints.
 - Cells store grapheme bytes inline (max 15); oversized clusters degrade to U+FFFD (overflow pool is a known TODO in `cell.zig`).
 - Unicode width/segmentation comes from the `zg` dependency, wrapped in `src/unicode.zig` so the rest of the library never imports zg directly — keep it that way so the dep stays swappable.
-- `caps.zig` defaults are conservative; runtime detection (DA1 / kitty `CSI ? u` responses surfaced as Parser events) is a known TODO. `Caps.assume_modern` exists for tests/demos.
+- Capability detection: `Terminal.detectCaps(&loop, timeout_ms)` writes the queries from `caps.query_sequence` (kitty `CSI ? u`, DECRQM 2026, DA1 last as a fence — every terminal answers DA1, and responses arrive in order), then folds `Event.cap` responses into `term.caps` via `Caps.apply`. User input racing the detection round-trip is stashed with `Loop.pushDeferred` and replayed by later `nextEvent` calls. Detection MUST read via `Loop.pollEvent` (not `nextEvent`): pollEvent bypasses the deferred queue, and detection is the producer of deferred events — reading them back livelocks on the first stashed keypress. A terminal that answers nothing leaves the conservative defaults after the timeout.
 - Capitalized filenames (`Tty.zig`, `Surface.zig`, …) are Zig's file-is-a-struct idiom; lowercase files (`cell.zig`, `event.zig`, …) are namespaces.
 
 ## Zig 0.16 specifics that bite
@@ -64,7 +64,6 @@ Other structural decisions:
 
 ## Known TODOs (marked in source)
 
-- `Loop.zig`: an escape sequence split across two reads is parsed eagerly (lone ESC → escape key); needs a short ESC-grace poll.
-- `caps.zig`: wire capability query responses through the Parser as events.
+- `caps.zig`: verify truecolor via XTGETTCAP (needs DCS response parsing in the Parser).
 - `cell.zig`: overflow storage for graphemes longer than 15 bytes (ZWJ emoji).
 - `Tty.zig`: panic-safe termios restore (opt-in root panic handler).

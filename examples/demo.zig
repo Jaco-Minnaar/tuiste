@@ -12,6 +12,7 @@ pub fn main(init: std.process.Init) !void {
     defer term.deinit();
 
     var loop = try tuiste.Loop.init(&term.tty);
+    const caps = try term.detectCaps(&loop, 300);
 
     var last_buf: [128]u8 = undefined;
     var last: []const u8 = "(none yet — press keys, click, resize)";
@@ -28,6 +29,12 @@ pub fn main(init: std.process.Init) !void {
             frame.width, frame.height, events,
         }) catch unreachable;
         _ = frame.writeText(2, 5, status, .{ .fg = .{ .indexed = 244 } });
+
+        var caps_buf: [64]u8 = undefined;
+        const caps_line = std.fmt.bufPrint(&caps_buf, "caps: kitty={} sync={}", .{
+            caps.kitty_keyboard, caps.synchronized_output,
+        }) catch unreachable;
+        _ = frame.writeText(2, 6, caps_line, .{ .fg = .{ .indexed = 244 } });
 
         _ = frame.writeText(2, 7, "last event: ", .{});
         _ = frame.writeText(14, 7, last, .{ .fg = .{ .rgb = .{ 0xff, 0xaf, 0x00 } } });

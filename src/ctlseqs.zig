@@ -33,6 +33,9 @@ pub const kitty_kb_push = "\x1b[>1u";
 pub const kitty_kb_pop = "\x1b[<u";
 pub const kitty_kb_query = "\x1b[?u";
 
+/// DECRQM: ask whether synchronized output (mode 2026) is supported.
+pub const sync_query = "\x1b[?2026$p";
+
 pub const da1_request = "\x1b[c";
 
 /// Move the cursor to 1-based (row, col).

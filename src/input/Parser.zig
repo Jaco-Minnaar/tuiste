@@ -156,6 +156,12 @@ fn parseCsi(input: []const u8) Result {
     const consumed = end + 1;
     var params = input[2..end];
 
+    // `?`-prefixed parameters mark terminal *responses* to our capability
+    // queries (and DEC private modes), never keyboard input.
+    if (params.len > 0 and params[0] == '?') {
+        return parsePrivate(params[1..], final, consumed);
+    }
+
     switch (final) {
         'A', 'B', 'C', 'D', 'H', 'F' => {
             const cp: u21 = switch (final) {
@@ -253,6 +259,35 @@ fn parseCsi(input: []const u8) Result {
     }
 }
 
+/// CSI sequences whose parameters begin with `?`: capability-query responses.
+/// `params` has the leading `?` already stripped.
+fn parsePrivate(params: []const u8, final: u8, consumed: usize) Result {
+    switch (final) {
+        'u' => {
+            // Kitty keyboard query reply: CSI ? flags u
+            const flags = subParam(params, 0) orelse 0;
+            return .{ .event = .{ .cap = .{
+                .kitty_keyboard = @intCast(flags & 0xff),
+            } }, .consumed = consumed };
+        },
+        'c' => return .{ .event = .{ .cap = .da1 }, .consumed = consumed },
+        'y' => {
+            // DECRQM reply: CSI ? mode ; value $ y
+            // The `$` intermediate rides along at the end of the params slice.
+            const trimmed = std.mem.trimEnd(u8, params, "$");
+            var it: ParamIter = .{ .rest = trimmed };
+            const mode = subParam(it.next() orelse "", 0) orelse
+                return .{ .event = null, .consumed = consumed };
+            const value = subParam(it.next() orelse "", 0) orelse 0;
+            return .{ .event = .{ .cap = .{ .decrqm = .{
+                .mode = @intCast(@min(mode, std.math.maxInt(u16))),
+                .value = @intCast(@min(value, std.math.maxInt(u8))),
+            } } }, .consumed = consumed };
+        },
+        else => return .{ .event = null, .consumed = consumed },
+    }
+}
+
 // --- tests ------------------------------------------------------------
 
 fn expectKey(input: []const u8, expected: Key, consumed: usize) !void {
@@ -330,6 +365,32 @@ test "sgr mouse press and wheel" {
 
     const w = p.parse("\x1b[<64;1;1M", false);
     try std.testing.expectEqual(event.MouseButton.wheel_up, w.event.?.mouse.button);
+}
+
+test "capability query responses" {
+    var p: Parser = .{};
+
+    const kitty = p.parse("\x1b[?1u", false);
+    try std.testing.expectEqual(@as(usize, 5), kitty.consumed);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .kitty_keyboard = 1 } }, kitty.event.?);
+    // flags 0 still means "protocol supported"
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .kitty_keyboard = 0 } }, p.parse("\x1b[?0u", false).event.?);
+
+    const da1 = p.parse("\x1b[?62;4;22c", false);
+    try std.testing.expectEqual(@as(usize, 11), da1.consumed);
+    try std.testing.expectEqualDeep(Event{ .cap = .da1 }, da1.event.?);
+
+    const sync = p.parse("\x1b[?2026;1$y", false);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .decrqm = .{ .mode = 2026, .value = 1 } } }, sync.event.?);
+    const unsupported = p.parse("\x1b[?2026;0$y", false);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .decrqm = .{ .mode = 2026, .value = 0 } } }, unsupported.event.?);
+}
+
+test "private-prefixed sequences never parse as keys" {
+    var p: Parser = .{};
+    // Looks like a kitty key ('a' with ctrl) but the ? marks it as a response.
+    const r = p.parse("\x1b[?97;5u", false);
+    try std.testing.expect(r.event.? == .cap);
 }
 
 test "focus and paste delimiters" {
