@@ -27,6 +27,9 @@ pub const Cap = union(enum) {
     /// DECRQM report: mode number and its value
     /// (0 = not recognized, 1 = set, 2 = reset, 3/4 = permanently so).
     decrqm: struct { mode: u16, value: u8 },
+    /// XTGETTCAP reply for the RGB/Tc terminfo caps: the terminal
+    /// confirmed (or denied) truecolor support.
+    truecolor: bool,
     /// Primary device attributes reply — the end-of-detection fence:
     /// every terminal answers DA1, and responses arrive in order.
     da1,

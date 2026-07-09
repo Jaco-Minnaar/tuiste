@@ -2,11 +2,12 @@
 
 Known gaps, in rough priority order. Items marked in source with `TODO` comments.
 
-- `caps.zig`: verify truecolor via XTGETTCAP (needs DCS response parsing in the Parser).
+(none currently — candidates: cursor positioning/show API, scroll-region optimization in the Renderer, OSC parsing for clipboard/hyperlinks, Windows/ConPTY)
 
 ## Done
 
-- ~~`Surface.zig`: fold zero-width marks into the previous cell in `writeText`~~
+- ~~`caps.zig`: verify truecolor via XTGETTCAP~~
+- ~~`Surface.zig`: fold zero-width marks into the previous cell in `writeText`~~ (3f1cac6)
 
 - ~~`Loop.zig`: ESC-grace timeout for escape sequences split across reads~~ (44d3232)
 - ~~`caps.zig`: runtime capability detection via query responses~~ (44d3232)

@@ -36,6 +36,10 @@ pub const kitty_kb_query = "\x1b[?u";
 /// DECRQM: ask whether synchronized output (mode 2026) is supported.
 pub const sync_query = "\x1b[?2026$p";
 
+/// XTGETTCAP for the terminfo caps "RGB" and "Tc" (hex-encoded): a positive
+/// reply to either confirms truecolor.
+pub const truecolor_query = "\x1bP+q524742;5463\x1b\\";
+
 pub const da1_request = "\x1b[c";
 
 /// Move the cursor to 1-based (row, col).

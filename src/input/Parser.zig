@@ -67,6 +67,7 @@ fn parseEscape(input: []const u8, more: bool) Result {
     }
     switch (input[1]) {
         '[' => return parseCsi(input),
+        'P' => return parseDcs(input),
         'O' => {
             // SS3: F1–F4 and application-mode cursor keys.
             if (input.len < 3) return .{ .event = null, .consumed = 0 };
@@ -288,6 +289,49 @@ fn parsePrivate(params: []const u8, final: u8, consumed: usize) Result {
     }
 }
 
+/// DCS strings: ESC P <payload> ESC \ (ST). The only payloads we understand
+/// are XTGETTCAP replies; anything else is consumed and ignored.
+fn parseDcs(input: []const u8) Result {
+    // Find the ST terminator.
+    var i: usize = 2;
+    const end = while (i + 1 < input.len) : (i += 1) {
+        if (input[i] == 0x1b and input[i + 1] == '\\') break i;
+        if (i > 2048) return .{ .event = null, .consumed = i }; // runaway; drop
+    } else return .{ .event = null, .consumed = 0 }; // incomplete
+
+    const payload = input[2..end];
+    const consumed = end + 2;
+
+    // XTGETTCAP reply: DCS 1 + r name=value[;name=value…] ST (hex-encoded
+    // names) on success, DCS 0 + r … ST when the terminal doesn't know the
+    // requested caps. We only ever ask about RGB/Tc (truecolor).
+    if (payload.len >= 3 and payload[1] == '+' and payload[2] == 'r') {
+        if (payload[0] == '0')
+            return .{ .event = .{ .cap = .{ .truecolor = false } }, .consumed = consumed };
+        if (payload[0] == '1') {
+            var truecolor = false;
+            var it = std.mem.splitScalar(u8, payload[3..], ';');
+            while (it.next()) |pair| {
+                const name_hex = if (std.mem.indexOfScalar(u8, pair, '=')) |eq| pair[0..eq] else pair;
+                var name_buf: [8]u8 = undefined;
+                const name = hexDecode(&name_buf, name_hex) orelse continue;
+                if (std.mem.eql(u8, name, "RGB") or std.mem.eql(u8, name, "Tc")) truecolor = true;
+            }
+            return .{ .event = .{ .cap = .{ .truecolor = truecolor } }, .consumed = consumed };
+        }
+    }
+    return .{ .event = null, .consumed = consumed };
+}
+
+fn hexDecode(buf: []u8, hex: []const u8) ?[]const u8 {
+    if (hex.len % 2 != 0 or hex.len / 2 > buf.len) return null;
+    var n: usize = 0;
+    while (n < hex.len) : (n += 2) {
+        buf[n / 2] = std.fmt.parseInt(u8, hex[n .. n + 2], 16) catch return null;
+    }
+    return buf[0 .. hex.len / 2];
+}
+
 // --- tests ------------------------------------------------------------
 
 fn expectKey(input: []const u8, expected: Key, consumed: usize) !void {
@@ -384,6 +428,31 @@ test "capability query responses" {
     try std.testing.expectEqualDeep(Event{ .cap = .{ .decrqm = .{ .mode = 2026, .value = 1 } } }, sync.event.?);
     const unsupported = p.parse("\x1b[?2026;0$y", false);
     try std.testing.expectEqualDeep(Event{ .cap = .{ .decrqm = .{ .mode = 2026, .value = 0 } } }, unsupported.event.?);
+}
+
+test "xtgettcap replies" {
+    var p: Parser = .{};
+
+    // RGB=8/8/8 (values hex-encoded like the names)
+    const rgb = p.parse("\x1bP1+r524742=382F382F38\x1b\\", false);
+    try std.testing.expectEqual(@as(usize, 24), rgb.consumed);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .truecolor = true } }, rgb.event.?);
+
+    // Tc with no value, second pair unknown
+    const tc = p.parse("\x1bP1+r5463;626F6F=31\x1b\\", false);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .truecolor = true } }, tc.event.?);
+
+    // terminal doesn't know the caps
+    const denied = p.parse("\x1bP0+r\x1b\\", false);
+    try std.testing.expectEqualDeep(Event{ .cap = .{ .truecolor = false } }, denied.event.?);
+
+    // unrelated DCS payloads are consumed and ignored
+    const other = p.parse("\x1bP=1s\x1b\\", false);
+    try std.testing.expectEqual(@as(?Event, null), other.event);
+    try std.testing.expectEqual(@as(usize, 7), other.consumed);
+
+    // incomplete DCS wants more bytes
+    try std.testing.expectEqual(@as(usize, 0), p.parse("\x1bP1+r5246", false).consumed);
 }
 
 test "private-prefixed sequences never parse as keys" {

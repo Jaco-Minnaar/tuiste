@@ -8,15 +8,19 @@ const ctlseqs = @import("ctlseqs.zig");
 const event = @import("event.zig");
 
 /// Everything we ask the terminal, DA1 fence last.
-pub const query_sequence =
-    ctlseqs.kitty_kb_query ++ ctlseqs.sync_query ++ ctlseqs.da1_request;
+pub const query_sequence = ctlseqs.kitty_kb_query ++ ctlseqs.sync_query ++
+    ctlseqs.truecolor_query ++ ctlseqs.da1_request;
 
 pub const Caps = struct {
     kitty_keyboard: bool = false,
-    /// Modern-ANSI assumption; almost universally true today, and RGB output
-    /// degrades gracefully on the terminals where it isn't.
-    /// TODO: verify via XTGETTCAP once DCS parsing exists.
+    /// Starts as a modern-ANSI assumption (RGB output degrades gracefully
+    /// where it's wrong); XTGETTCAP replies during detection confirm or
+    /// deny it. No reply leaves the assumption in place.
     truecolor: bool = true,
+    /// Whether a positive XTGETTCAP reply arrived. Terminals that answer
+    /// per-capname send separate RGB and Tc replies — once one confirms,
+    /// a later "don't know that cap" reply must not downgrade.
+    truecolor_confirmed: bool = false,
     synchronized_output: bool = false,
 
     /// What you get on any current mainstream terminal emulator.
@@ -32,6 +36,14 @@ pub const Caps = struct {
         switch (cap) {
             // Any reply at all means the protocol is spoken.
             .kitty_keyboard => self.kitty_keyboard = true,
+            .truecolor => |confirmed| {
+                if (confirmed) {
+                    self.truecolor = true;
+                    self.truecolor_confirmed = true;
+                } else if (!self.truecolor_confirmed) {
+                    self.truecolor = false;
+                }
+            },
             .decrqm => |m| {
                 if (m.mode == 2026) {
                     // 1 = set, 2 = reset, 3 = permanently set: all usable.
@@ -55,6 +67,23 @@ test "apply folds responses and signals the da1 fence" {
     try std.testing.expect(!caps.apply(.{ .decrqm = .{ .mode = 2026, .value = 2 } }));
     try std.testing.expect(caps.synchronized_output);
     try std.testing.expect(caps.apply(.da1));
+}
+
+test "truecolor replies confirm, deny, and stay sticky" {
+    // no reply: assumption survives
+    const silent: Caps = .{};
+    try std.testing.expect(silent.truecolor);
+
+    // explicit denial downgrades
+    var denied: Caps = .{};
+    _ = denied.apply(.{ .truecolor = false });
+    try std.testing.expect(!denied.truecolor);
+
+    // per-name replies: a confirm followed by an unknown-cap denial sticks
+    var split: Caps = .{};
+    _ = split.apply(.{ .truecolor = true });
+    _ = split.apply(.{ .truecolor = false });
+    try std.testing.expect(split.truecolor);
 }
 
 test "unsupported decrqm values stay off" {

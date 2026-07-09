@@ -34,8 +34,8 @@ pub fn main(init: std.process.Init) !void {
         _ = frame.writeText(2, 5, status, .{ .fg = .{ .indexed = 244 } });
 
         var caps_buf: [64]u8 = undefined;
-        const caps_line = std.fmt.bufPrint(&caps_buf, "caps: kitty={} sync={}", .{
-            caps.kitty_keyboard, caps.synchronized_output,
+        const caps_line = std.fmt.bufPrint(&caps_buf, "caps: kitty={} sync={} tc={}", .{
+            caps.kitty_keyboard, caps.synchronized_output, caps.truecolor,
         }) catch unreachable;
         _ = frame.writeText(2, 6, caps_line, .{ .fg = .{ .indexed = 244 } });
 
