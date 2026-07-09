@@ -37,7 +37,8 @@ pub fn panicRestore() void {
     // lands on the user's real screen, after the cursor is visible again.
     const unwind = ctlseqs.kitty_kb_pop ++ ctlseqs.mouse_off ++
         ctlseqs.bracketed_paste_off ++ ctlseqs.focus_off ++
-        ctlseqs.sgr_reset ++ ctlseqs.show_cursor ++ ctlseqs.exit_alt_screen;
+        ctlseqs.sgr_reset ++ ctlseqs.cursor_shape_reset ++
+        ctlseqs.show_cursor ++ ctlseqs.exit_alt_screen;
     // Raw syscall: std.posix has no write wrapper in 0.16, and panic context
     // wants the most primitive path anyway.
     var written: usize = 0;

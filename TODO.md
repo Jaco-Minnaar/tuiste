@@ -2,11 +2,12 @@
 
 Known gaps, in rough priority order. Items marked in source with `TODO` comments.
 
-(none currently — candidates: cursor positioning/show API, scroll-region optimization in the Renderer, OSC parsing for clipboard/hyperlinks, Windows/ConPTY)
+(none currently — candidates: scroll-region optimization in the Renderer, OSC parsing for clipboard/hyperlinks, Windows/ConPTY)
 
 ## Done
 
-- ~~`caps.zig`: verify truecolor via XTGETTCAP~~
+- ~~cursor positioning/visibility/shape API (`Terminal.setCursor`)~~
+- ~~`caps.zig`: verify truecolor via XTGETTCAP~~ (2895a83)
 - ~~`Surface.zig`: fold zero-width marks into the previous cell in `writeText`~~ (3f1cac6)
 
 - ~~`Loop.zig`: ESC-grace timeout for escape sequences split across reads~~ (44d3232)

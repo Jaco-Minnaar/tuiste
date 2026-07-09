@@ -73,7 +73,8 @@ pub fn deinit(self: *Terminal) void {
     if (self.options.bracketed_paste) w.writeAll(ctlseqs.bracketed_paste_off) catch {};
     if (self.options.mouse) w.writeAll(ctlseqs.mouse_off) catch {};
     if (self.options.kitty_keyboard) w.writeAll(ctlseqs.kitty_kb_pop) catch {};
-    w.writeAll(ctlseqs.sgr_reset ++ ctlseqs.show_cursor ++ ctlseqs.exit_alt_screen) catch {};
+    w.writeAll(ctlseqs.sgr_reset ++ ctlseqs.cursor_shape_reset ++
+        ctlseqs.show_cursor ++ ctlseqs.exit_alt_screen) catch {};
     self.tty.flush() catch {};
 
     self.renderer.deinit(self.gpa);
@@ -82,9 +83,19 @@ pub fn deinit(self: *Terminal) void {
 }
 
 /// Start a new frame: returns the cleared back surface to draw into.
+/// Also resets the cursor request — like everything else in a frame, a
+/// visible cursor must be re-requested each pass (see `setCursor`).
 pub fn frame(self: *Terminal) *Surface {
     self.renderer.back.clear();
+    self.renderer.cursor_request = null;
     return &self.renderer.back;
+}
+
+/// Request the hardware cursor at a cell for the current frame, e.g.
+/// `term.setCursor(.{ .x = col, .y = row, .shape = .bar })`. Applied by
+/// `render` after the diff; without a request the cursor stays hidden.
+pub fn setCursor(self: *Terminal, cursor: Renderer.Cursor) void {
+    self.renderer.cursor_request = cursor;
 }
 
 /// Diff the drawn frame against the screen and flush the delta.

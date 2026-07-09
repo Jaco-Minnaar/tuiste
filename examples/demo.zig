@@ -40,7 +40,8 @@ pub fn main(init: std.process.Init) !void {
         _ = frame.writeText(2, 6, caps_line, .{ .fg = .{ .indexed = 244 } });
 
         _ = frame.writeText(2, 7, "last event: ", .{});
-        _ = frame.writeText(14, 7, last, .{ .fg = .{ .rgb = .{ 0xff, 0xaf, 0x00 } } });
+        const last_cols = frame.writeText(14, 7, last, .{ .fg = .{ .rgb = .{ 0xff, 0xaf, 0x00 } } });
+        term.setCursor(.{ .x = 14 + last_cols, .y = 7, .shape = .bar });
         try term.render();
 
         const ev = (try loop.nextEvent(null)) orelse continue;

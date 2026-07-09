@@ -42,9 +42,17 @@ pub const truecolor_query = "\x1bP+q524742;5463\x1b\\";
 
 pub const da1_request = "\x1b[c";
 
+/// DECSCUSR: reset the cursor shape to the terminal's default.
+pub const cursor_shape_reset = "\x1b[0 q";
+
 /// Move the cursor to 1-based (row, col).
 pub fn cup(writer: *Io.Writer, row: u16, col: u16) Io.Writer.Error!void {
     try writer.print("\x1b[{d};{d}H", .{ row, col });
+}
+
+/// DECSCUSR: set the cursor shape (note the space before the final q).
+pub fn cursorShape(writer: *Io.Writer, shape: u4) Io.Writer.Error!void {
+    try writer.print("\x1b[{d} q", .{shape});
 }
 
 /// Emit the full SGR state for `style`, starting from a reset so no prior

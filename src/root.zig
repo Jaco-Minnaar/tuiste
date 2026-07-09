@@ -19,6 +19,7 @@ pub const Surface = @import("Surface.zig");
 pub const GraphemePool = @import("GraphemePool.zig");
 pub const Tty = @import("Tty.zig");
 pub const Renderer = @import("Renderer.zig");
+pub const Cursor = Renderer.Cursor;
 pub const Terminal = @import("Terminal.zig");
 pub const Loop = @import("Loop.zig");
 pub const Parser = @import("input/Parser.zig");
