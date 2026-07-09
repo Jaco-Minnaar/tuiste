@@ -17,23 +17,29 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const demo = b.addExecutable(.{
-        .name = "demo",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/demo.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "tuiste", .module = mod },
-            },
-        }),
-    });
-    b.installArtifact(demo);
+    const examples = [_]struct { name: []const u8, src: []const u8, step: []const u8, desc: []const u8 }{
+        .{ .name = "demo", .src = "examples/demo.zig", .step = "run", .desc = "Run the demo example" },
+        .{ .name = "input", .src = "examples/input.zig", .step = "input", .desc = "Run the text-input example" },
+    };
+    for (examples) |ex| {
+        const exe = b.addExecutable(.{
+            .name = ex.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(ex.src),
+                .target = target,
+                .optimize = optimize,
+                .imports = &.{
+                    .{ .name = "tuiste", .module = mod },
+                },
+            }),
+        });
+        b.installArtifact(exe);
 
-    const run_step = b.step("run", "Run the demo example");
-    const run_cmd = b.addRunArtifact(demo);
-    run_cmd.step.dependOn(b.getInstallStep());
-    run_step.dependOn(&run_cmd.step);
+        const step = b.step(ex.step, ex.desc);
+        const run_cmd = b.addRunArtifact(exe);
+        run_cmd.step.dependOn(b.getInstallStep());
+        step.dependOn(&run_cmd.step);
+    }
 
     const mod_tests = b.addTest(.{
         .root_module = mod,

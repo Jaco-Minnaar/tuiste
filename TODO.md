@@ -6,7 +6,8 @@ Known gaps, in rough priority order. Items marked in source with `TODO` comments
 
 ## Done
 
-- ~~cursor positioning/visibility/shape API (`Terminal.setCursor`)~~
+- ~~text-input example (`examples/input.zig`) dogfooding cursor + grapheme editing~~
+- ~~cursor positioning/visibility/shape API (`Terminal.setCursor`)~~ (1eaa896)
 - ~~`caps.zig`: verify truecolor via XTGETTCAP~~ (2895a83)
 - ~~`Surface.zig`: fold zero-width marks into the previous cell in `writeText`~~ (3f1cac6)
 

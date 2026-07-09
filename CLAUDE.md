@@ -10,8 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```sh
 zig build test --summary all   # run all library tests
-zig build                      # compile demo exe (zig-out/bin/demo)
+zig build                      # compile the examples (zig-out/bin/{demo,input})
 zig build run                  # run the demo interactively
+zig build input                # run the text-input example
 ```
 
 There is no per-file test runner wired up; to iterate on one module's tests use `zig test src/<file>.zig` only for pure modules (cell, event) — anything importing `unicode.zig` needs the zg module mapping that only `zig build test` provides.
