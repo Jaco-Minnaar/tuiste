@@ -66,7 +66,7 @@ handlers). macOS may come later; Windows/ConPTY is an open TODO.
 ## Installation
 
 ```sh
-zig fetch --save git+<repository-url>
+zig fetch --save git+https://github.com/Jaco-Minnaar/tuiste
 ```
 
 Then in your `build.zig`:
@@ -243,5 +243,4 @@ in a headless pty:
 
 ## License
 
-Not yet chosen — coming with the first tagged release. Until then, treat
-the code as all-rights-reserved reference material.
+[MIT](LICENSE)
