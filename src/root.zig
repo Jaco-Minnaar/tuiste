@@ -16,10 +16,16 @@ pub const Color = cell.Color;
 pub const Attrs = cell.Attrs;
 
 pub const Surface = @import("Surface.zig");
+pub const Rect = @import("Rect.zig");
+pub const Region = @import("Region.zig");
+pub const layout = @import("layout.zig");
+pub const Constraint = layout.Constraint;
+pub const widgets = @import("widgets.zig");
 pub const GraphemePool = @import("GraphemePool.zig");
 pub const Tty = @import("Tty.zig");
 pub const Renderer = @import("Renderer.zig");
 pub const Cursor = Renderer.Cursor;
+pub const Scroll = Renderer.Scroll;
 pub const Terminal = @import("Terminal.zig");
 pub const Loop = @import("Loop.zig");
 pub const Parser = @import("input/Parser.zig");

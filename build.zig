@@ -20,6 +20,13 @@ pub fn build(b: *std.Build) void {
     const examples = [_]struct { name: []const u8, src: []const u8, step: []const u8, desc: []const u8 }{
         .{ .name = "demo", .src = "examples/demo.zig", .step = "run", .desc = "Run the demo example" },
         .{ .name = "input", .src = "examples/input.zig", .step = "input", .desc = "Run the text-input example" },
+        .{ .name = "scroll", .src = "examples/scroll.zig", .step = "scroll", .desc = "Run the scrolling-log example" },
+        .{ .name = "paragraph", .src = "examples/paragraph.zig", .step = "paragraph", .desc = "Run the wrapped-paragraph example" },
+        .{ .name = "list", .src = "examples/list.zig", .step = "list", .desc = "Run the selectable-list example" },
+        .{ .name = "dashboard", .src = "examples/dashboard.zig", .step = "dashboard", .desc = "Run the widget-dashboard example" },
+        .{ .name = "tree", .src = "examples/tree.zig", .step = "tree", .desc = "Run the expand/collapse tree example" },
+        .{ .name = "textarea", .src = "examples/textarea.zig", .step = "textarea", .desc = "Run the multi-line editor example" },
+        .{ .name = "chart", .src = "examples/chart.zig", .step = "chart", .desc = "Run the braille-chart example" },
     };
     for (examples) |ex| {
         const exe = b.addExecutable(.{

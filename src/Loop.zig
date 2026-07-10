@@ -12,8 +12,13 @@ const event = @import("event.zig");
 const Event = event.Event;
 const Key = event.Key;
 
+gpa: std.mem.Allocator,
 tty: *Tty,
 parser: Parser = .{},
+/// Aggregates bracketed-paste chunks into the single `.paste` event the
+/// application sees. Cleared when the next paste begins, which is also the
+/// lifetime of the slice a `.paste` event carries.
+paste_buf: std.ArrayList(u8) = .empty,
 /// How long to wait for the rest of a split escape sequence before
 /// committing to the "user pressed Escape" interpretation.
 esc_grace_ms: i32 = 20,
@@ -32,7 +37,7 @@ fn handleWinch(_: posix.SIG) callconv(.c) void {
     if (winch_pipe[1] != -1) _ = linux.write(winch_pipe[1], "w", 1);
 }
 
-pub fn init(tty: *Tty) !Loop {
+pub fn init(gpa: std.mem.Allocator, tty: *Tty) !Loop {
     if (winch_pipe[0] == -1) {
         var fds: [2]i32 = undefined;
         const rc = linux.pipe2(&fds, .{ .NONBLOCK = true, .CLOEXEC = true });
@@ -44,7 +49,12 @@ pub fn init(tty: *Tty) !Loop {
         .mask = posix.sigemptyset(),
         .flags = 0,
     }, null);
-    return .{ .tty = tty };
+    return .{ .gpa = gpa, .tty = tty };
+}
+
+pub fn deinit(self: *Loop) void {
+    self.paste_buf.deinit(self.gpa);
+    self.* = undefined;
 }
 
 /// Re-queue an event to be returned by a later `nextEvent` call, ahead of
@@ -80,7 +90,9 @@ pub fn pollEvent(self: *Loop, timeout_ms: ?i32) !?Event {
             const r = self.parser.parse(self.buf[self.start..self.end], true);
             if (r.consumed > 0) {
                 self.start += r.consumed;
-                if (r.event) |ev| return ev;
+                if (r.event) |ev| {
+                    if (try self.foldPaste(ev)) |out| return out;
+                }
                 continue :parsing;
             }
             // Incomplete. Give the rest of the sequence a grace window to
@@ -89,12 +101,27 @@ pub fn pollEvent(self: *Loop, timeout_ms: ?i32) !?Event {
                 .bytes => continue :parsing,
                 .resize => |size| return .{ .resize = size },
                 .timeout => {
+                    // Mid-paste there is no ambiguity to resolve: a held-back
+                    // partial terminator completes only with more bytes, and
+                    // the terminal is guaranteed to still be sending them.
+                    // Wait with the caller's timeout instead of the grace one.
+                    // Returning early keeps start/end, so the held bytes
+                    // survive into the next call.
+                    if (self.parser.in_paste) {
+                        switch (try self.fill(timeout_ms)) {
+                            .bytes => continue :parsing,
+                            .resize => |size| return .{ .resize = size },
+                            .timeout => return null,
+                        }
+                    }
                     // Nothing came: resolve with more = false (lone ESC
                     // becomes an Escape keypress).
                     const r2 = self.parser.parse(self.buf[self.start..self.end], false);
                     if (r2.consumed > 0) {
                         self.start += r2.consumed;
-                        if (r2.event) |ev| return ev;
+                        if (r2.event) |ev| {
+                            if (try self.foldPaste(ev)) |out| return out;
+                        }
                         continue :parsing;
                     }
                     // Still unresolvable (truncated CSI, torn UTF-8): commit
@@ -115,6 +142,22 @@ pub fn pollEvent(self: *Loop, timeout_ms: ?i32) !?Event {
             .timeout => return null,
         }
     }
+}
+
+/// Fold the Parser's low-level paste events into `paste_buf`. Returns the
+/// event to surface, or null when the event was aggregation bookkeeping.
+/// This runs below the deferred queue on purpose: `.paste_chunk` slices
+/// point into `buf`, which the next fill() compacts, so they must be copied
+/// out before anything else can happen — only the aggregated `.paste`
+/// (backed by stable `paste_buf` memory) may ever escape or be deferred.
+fn foldPaste(self: *Loop, ev: Event) !?Event {
+    switch (ev) {
+        .paste_start => self.paste_buf.clearRetainingCapacity(),
+        .paste_chunk => |bytes| try self.paste_buf.appendSlice(self.gpa, bytes),
+        .paste_end => return .{ .paste = self.paste_buf.items },
+        else => return ev,
+    }
+    return null;
 }
 
 const Filled = union(enum) {

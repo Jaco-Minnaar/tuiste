@@ -13,7 +13,14 @@ pub const Event = union(enum) {
     resize: Size,
     focus_in,
     focus_out,
+    /// A complete bracketed paste, aggregated by the Loop. The text is owned
+    /// by the Loop and valid until the next paste begins — dupe it to keep it.
+    paste: []const u8,
+    /// Low-level paste events from the Parser; the Loop consumes these and
+    /// applications never see them. A chunk is a slice into the bytes fed to
+    /// `parse` and is only valid during that call.
     paste_start,
+    paste_chunk: []const u8,
     paste_end,
     cap: Cap,
 };

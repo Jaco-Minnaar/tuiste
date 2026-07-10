@@ -2,7 +2,8 @@
 //!
 //!     var term = try Terminal.init(gpa, io, .{});
 //!     defer term.deinit();
-//!     var loop = try Loop.init(&term.tty);
+//!     var loop = try Loop.init(gpa, &term.tty);
+//!     defer loop.deinit();
 //!     while (true) {
 //!         var frame = term.frame();
 //!         frame.writeText(...);
@@ -88,7 +89,22 @@ pub fn deinit(self: *Terminal) void {
 pub fn frame(self: *Terminal) *Surface {
     self.renderer.back.clear();
     self.renderer.cursor_request = null;
+    self.renderer.scroll_count = 0;
     return &self.renderer.back;
+}
+
+/// Hint that the full-width band of rows [top, bottom] (0-based, inclusive)
+/// scrolled up by `lines` since the previous frame — e.g. a log pane above a
+/// fixed status bar. Render replays it as a hardware scroll so the diff only
+/// repaints the newly exposed lines. Purely an optimization: an invalid or
+/// omitted hint just means a larger repaint.
+pub fn scrollUp(self: *Terminal, top: u16, bottom: u16, lines: u16) void {
+    self.renderer.pushScroll(.{ .top = top, .bottom = bottom, .lines = lines, .dir = .up });
+}
+
+/// `scrollUp`'s mirror image: the band moved down (new space at the top).
+pub fn scrollDown(self: *Terminal, top: u16, bottom: u16, lines: u16) void {
+    self.renderer.pushScroll(.{ .top = top, .bottom = bottom, .lines = lines, .dir = .down });
 }
 
 /// Request the hardware cursor at a cell for the current frame, e.g.
@@ -107,6 +123,15 @@ pub fn render(self: *Terminal) !void {
 /// Call on `Event.resize`; reallocates buffers and forces a full redraw.
 pub fn resize(self: *Terminal, size: event.Size) !void {
     try self.renderer.resize(self.gpa, size.cols, size.rows);
+}
+
+/// Copy `text` to the system clipboard via OSC 52. Fire-and-forget:
+/// terminals without support (or with clipboard write disabled — it's a
+/// common security toggle) ignore it, and some cap the payload size.
+/// Works over SSH, which is the point of doing it through the terminal.
+pub fn copyToClipboard(self: *Terminal, text: []const u8) !void {
+    try ctlseqs.osc52Copy(self.tty.writer(), 'c', text);
+    try self.tty.flush();
 }
 
 /// Query the terminal for its capabilities and fold the answers into

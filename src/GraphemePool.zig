@@ -1,8 +1,9 @@
-//! Interning storage for grapheme clusters too long for a Cell's inline
-//! buffer (ZWJ emoji sequences, mostly). Equal byte sequences intern to the
-//! same index, so pooled cells compare by index and the Renderer's diff
-//! stays a value comparison. Entries live for the pool's lifetime — the
-//! variety of long graphemes an app draws is small and bounded in practice.
+//! Interning storage for byte strings a Cell can't hold inline: grapheme
+//! clusters past the inline buffer (ZWJ emoji sequences, mostly) and OSC 8
+//! hyperlink URIs. Equal byte sequences intern to the same index, so pooled
+//! cells compare by index and the Renderer's diff stays a value comparison.
+//! Entries live for the pool's lifetime — the variety of long graphemes and
+//! link targets an app draws is small and bounded in practice.
 const GraphemePool = @This();
 
 const std = @import("std");

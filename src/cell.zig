@@ -47,6 +47,9 @@ pub const Cell = struct {
     /// sits behind the second column of a wide grapheme.
     width: u2 = 1,
     style: Style = .{},
+    /// OSC 8 hyperlink: 0 for none, else pool index + 1 of the interned URI
+    /// (same pool as overflowed graphemes). Resolve via `Surface.linkOf`.
+    link: u32 = 0,
 
     pub const max_grapheme_bytes = 15;
 
@@ -91,7 +94,7 @@ pub const Cell = struct {
     }
 
     pub fn eql(a: Cell, b: Cell) bool {
-        if (a.len != b.len or a.width != b.width or !a.style.eql(b.style)) return false;
+        if (a.len != b.len or a.width != b.width or a.link != b.link or !a.style.eql(b.style)) return false;
         // Pooled graphemes intern to a unique index, so index equality is
         // content equality (assuming one pool, which the Renderer guarantees).
         const n = if (a.len == overflow_len) 4 else a.len;
@@ -122,5 +125,12 @@ test "cell equality includes style" {
     var b = Cell.init("x", 1, .{});
     try std.testing.expect(a.eql(b));
     b.style.fg = .{ .ansi = 1 };
+    try std.testing.expect(!a.eql(b));
+}
+
+test "cell equality includes link" {
+    const a = Cell.init("x", 1, .{});
+    var b = Cell.init("x", 1, .{});
+    b.link = 1;
     try std.testing.expect(!a.eql(b));
 }

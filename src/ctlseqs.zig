@@ -45,6 +45,24 @@ pub const da1_request = "\x1b[c";
 /// DECSCUSR: reset the cursor shape to the terminal's default.
 pub const cursor_shape_reset = "\x1b[0 q";
 
+/// DECSTBM: reset the scroll margins to the full screen.
+pub const margins_reset = "\x1b[r";
+
+/// DECSTBM: confine scrolling to the 1-based rows [top, bottom].
+pub fn setScrollRegion(writer: *Io.Writer, top: u16, bottom: u16) Io.Writer.Error!void {
+    try writer.print("\x1b[{d};{d}r", .{ top, bottom });
+}
+
+/// SU: scroll the region up n lines (content moves up, blanks appear at the bottom).
+pub fn scrollUp(writer: *Io.Writer, n: u16) Io.Writer.Error!void {
+    try writer.print("\x1b[{d}S", .{n});
+}
+
+/// SD: scroll the region down n lines (content moves down, blanks appear at the top).
+pub fn scrollDown(writer: *Io.Writer, n: u16) Io.Writer.Error!void {
+    try writer.print("\x1b[{d}T", .{n});
+}
+
 /// Move the cursor to 1-based (row, col).
 pub fn cup(writer: *Io.Writer, row: u16, col: u16) Io.Writer.Error!void {
     try writer.print("\x1b[{d};{d}H", .{ row, col });
@@ -53,6 +71,37 @@ pub fn cup(writer: *Io.Writer, row: u16, col: u16) Io.Writer.Error!void {
 /// DECSCUSR: set the cursor shape (note the space before the final q).
 pub fn cursorShape(writer: *Io.Writer, shape: u4) Io.Writer.Error!void {
     try writer.print("\x1b[{d} q", .{shape});
+}
+
+/// OSC 8: everything written after this links to `uri`, until closed.
+/// Cells carrying the same uri *and* a same non-empty `id` are one link to
+/// the terminal (hover highlights them together even when emitted apart);
+/// an empty id omits the parameter. Terminals without hyperlink support
+/// ignore the OSC and show plain text.
+pub fn hyperlinkStart(writer: *Io.Writer, id: []const u8, uri: []const u8) Io.Writer.Error!void {
+    if (id.len > 0) {
+        try writer.print("\x1b]8;id={s};{s}\x1b\\", .{ id, uri });
+    } else {
+        try writer.print("\x1b]8;;{s}\x1b\\", .{uri});
+    }
+}
+
+/// OSC 8 with an empty URI: close the open hyperlink.
+pub const hyperlink_end = "\x1b]8;;\x1b\\";
+
+/// OSC 52: write `text` to a system selection, base64-encoded. `dest` is
+/// the selection byte: 'c' clipboard, 'p' primary. Encoded in 48-byte
+/// chunks (64 output chars, padding only in the last) so any length streams
+/// without allocating.
+pub fn osc52Copy(writer: *Io.Writer, dest: u8, text: []const u8) Io.Writer.Error!void {
+    try writer.print("\x1b]52;{c};", .{dest});
+    const encoder = std.base64.standard.Encoder;
+    var i: usize = 0;
+    while (i < text.len) : (i += 48) {
+        var out: [64]u8 = undefined;
+        try writer.writeAll(encoder.encode(&out, text[i..@min(i + 48, text.len)]));
+    }
+    try writer.writeAll("\x1b\\");
 }
 
 /// Emit the full SGR state for `style`, starting from a reset so no prior
@@ -80,6 +129,25 @@ pub fn sgr(writer: *Io.Writer, style: Style) Io.Writer.Error!void {
         .rgb => |c| try writer.print(";48;2;{d};{d};{d}", .{ c[0], c[1], c[2] }),
     }
     try writer.writeByte('m');
+}
+
+test "osc52 base64-encodes the payload" {
+    var buf: [256]u8 = undefined;
+    var w: Io.Writer = .fixed(&buf);
+    try osc52Copy(&w, 'c', "hello");
+    try std.testing.expectEqualStrings("\x1b]52;c;aGVsbG8=\x1b\\", w.buffered());
+
+    // empty text still produces a well-formed (clearing) sequence
+    var w2: Io.Writer = .fixed(&buf);
+    try osc52Copy(&w2, 'c', "");
+    try std.testing.expectEqualStrings("\x1b]52;c;\x1b\\", w2.buffered());
+
+    // multi-chunk payload: padding appears only at the very end
+    var w3: Io.Writer = .fixed(&buf);
+    try osc52Copy(&w3, 'p', "a" ** 49);
+    var expect_buf: [128]u8 = undefined;
+    const expect = std.base64.standard.Encoder.encode(&expect_buf, "a" ** 49);
+    try std.testing.expectEqualStrings(expect, w3.buffered()[7 .. w3.buffered().len - 2]);
 }
 
 test "sgr emits reset plus attributes" {

@@ -13,8 +13,10 @@ const Key = event.Key;
 const Mods = event.Mods;
 const Mouse = event.Mouse;
 
-// No state yet: every supported sequence parses from a byte slice alone.
-// The struct exists so paste-mode and grapheme state can live here later.
+/// Between the bracketed-paste delimiters the parsing rules change: every
+/// byte is literal content until the `CSI 201~` terminator, so paste mode is
+/// the one piece of state the byte stream alone can't carry.
+in_paste: bool = false,
 
 pub const Result = struct {
     event: ?Event,
@@ -26,10 +28,46 @@ pub const Result = struct {
 /// Parse one event from the front of `input`. `more` signals that further
 /// bytes are known to be pending, which disambiguates a lone ESC.
 pub fn parse(self: *Parser, input: []const u8, more: bool) Result {
-    _ = self;
     std.debug.assert(input.len > 0);
-    if (input[0] == 0x1b) return parseEscape(input, more);
-    return parseGround(input);
+    if (self.in_paste) return self.parsePaste(input);
+    const r = if (input[0] == 0x1b) parseEscape(input, more) else parseGround(input);
+    if (r.event) |ev| {
+        if (ev == .paste_start) self.in_paste = true;
+    }
+    return r;
+}
+
+const paste_terminator = "\x1b[201~";
+
+/// Paste mode: everything is literal content until the terminator. Content
+/// is returned as `.paste_chunk` slices into `input`. A trailing partial
+/// terminator is held back until later bytes resolve it — unlike a lone ESC
+/// keypress there is no timeout ambiguity here, because the terminal is
+/// mid-paste and the terminator is guaranteed to still be in flight (the
+/// Loop knows this and waits instead of applying its ESC grace timeout).
+fn parsePaste(self: *Parser, input: []const u8) Result {
+    if (std.mem.indexOf(u8, input, paste_terminator)) |i| {
+        if (i == 0) {
+            self.in_paste = false;
+            return .{ .event = .paste_end, .consumed = paste_terminator.len };
+        }
+        return .{ .event = .{ .paste_chunk = input[0..i] }, .consumed = i };
+    }
+    // No terminator, so nothing but a partial prefix of one at the very end
+    // of the input can be part of it; everything before that is content.
+    const held = partialSuffixLen(input, paste_terminator);
+    const end = input.len - held;
+    if (end == 0) return .{ .event = null, .consumed = 0 };
+    return .{ .event = .{ .paste_chunk = input[0..end] }, .consumed = end };
+}
+
+/// Length of the longest proper prefix of `needle` that `haystack` ends with.
+fn partialSuffixLen(haystack: []const u8, needle: []const u8) usize {
+    var k = @min(haystack.len, needle.len - 1);
+    while (k > 0) : (k -= 1) {
+        if (std.mem.endsWith(u8, haystack, needle[0..k])) return k;
+    }
+    return 0;
 }
 
 fn keyEvent(k: Key, consumed: usize) Result {
@@ -466,4 +504,60 @@ test "focus and paste delimiters" {
     var p: Parser = .{};
     try std.testing.expectEqualDeep(Event.focus_in, p.parse("\x1b[I", false).event.?);
     try std.testing.expectEqualDeep(Event.paste_start, p.parse("\x1b[200~", false).event.?);
+    try std.testing.expect(p.in_paste);
+}
+
+test "paste content is literal until the terminator" {
+    var p: Parser = .{};
+    _ = p.parse("\x1b[200~", false);
+
+    // Escape-looking bytes inside a paste stay literal.
+    const chunk = p.parse("hi \x1b[A there\x1b[201~", true);
+    try std.testing.expectEqualStrings("hi \x1b[A there", chunk.event.?.paste_chunk);
+
+    const end = p.parse("\x1b[201~", true);
+    try std.testing.expectEqualDeep(Event.paste_end, end.event.?);
+    try std.testing.expect(!p.in_paste);
+
+    // Back to normal parsing.
+    try std.testing.expectEqualDeep(
+        Event{ .key = .{ .codepoint = Key.up } },
+        p.parse("\x1b[A", false).event.?,
+    );
+}
+
+test "paste terminator split across reads" {
+    var p: Parser = .{};
+    _ = p.parse("\x1b[200~", false);
+
+    // Content up to the partial terminator is emitted; the tail is held.
+    const chunk = p.parse("abc\x1b[201", true);
+    try std.testing.expectEqualStrings("abc", chunk.event.?.paste_chunk);
+    try std.testing.expectEqual(@as(usize, 3), chunk.consumed);
+
+    // Held tail alone: incomplete regardless of `more` — mid-paste the
+    // terminator is guaranteed to still be in flight...
+    try std.testing.expectEqual(@as(usize, 0), p.parse("\x1b[201", true).consumed);
+    try std.testing.expectEqual(@as(usize, 0), p.parse("\x1b[201", false).consumed);
+    // ...and completes once the rest arrives.
+    try std.testing.expectEqualDeep(Event.paste_end, p.parse("\x1b[201~", true).event.?);
+}
+
+test "held partial terminator that diverges is literal content" {
+    var p: Parser = .{};
+    _ = p.parse("\x1b[200~", false);
+    // Ends like a terminator, but the next byte proves it content.
+    const r = p.parse("abc\x1b[20x", true);
+    try std.testing.expectEqualStrings("abc\x1b[20x", r.event.?.paste_chunk);
+    try std.testing.expect(p.in_paste);
+    // Content ending in a terminator lookalike right before the real one.
+    const r2 = p.parse("ab\x1b[2\x1b[201~", true);
+    try std.testing.expectEqualStrings("ab\x1b[2", r2.event.?.paste_chunk);
+    try std.testing.expectEqualDeep(Event.paste_end, p.parse("\x1b[201~", true).event.?);
+}
+
+test "empty paste" {
+    var p: Parser = .{};
+    _ = p.parse("\x1b[200~", false);
+    try std.testing.expectEqualDeep(Event.paste_end, p.parse("\x1b[201~", false).event.?);
 }
