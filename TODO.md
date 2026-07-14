@@ -28,7 +28,7 @@ Windows/ConPTY.
 
 ## Done
 
-- ~~widget: `widgets.Sparkline` (eighth-height blocks over the full region height, auto/fixed range, tail-keeping) + `.marker = .braille` mode (two samples per cell, btop-style filled area graph), dogfooded in the dashboard~~
+- ~~widget: `widgets.Sparkline` (eighth-height blocks over the full region height, auto/fixed range, tail-keeping) + `.marker = .braille` mode (two samples per cell, btop-style filled area graph) + `.gradient` bottom→top color stops sampled per cell row, dogfooded in the dashboard~~
 - ~~widgets: `braille` (dot/line plotting, Surface-as-accumulator merge, no scratch buffer) + `Chart` (line/scatter datasets, bounds mapping, axis labels, legend) + animated chart example~~
 - ~~widget: `widgets.TextArea` — contiguous app-owned buffer, wrapped-row cursor motion (sticky column, visual home/end), virtual row after a trailing newline, `handleKey`/`hitTest`, vertical scroll-follow + textarea example~~
 - ~~widget: `widgets.Tree` — flat pre-order `[]Node` (app owns expansion), node-index selection that snaps to the collapsing ancestor, user-defined markers/guide lines, `handleKey` (←/→ fold, enter/space toggle) + `hitTest` + tree example~~

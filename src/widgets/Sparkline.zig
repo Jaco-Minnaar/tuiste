@@ -20,9 +20,28 @@ values: []const f64 = &.{},
 /// Values outside the range clamp to the ends.
 range: ?[2]f64 = null,
 style: Style = .{},
+/// Bottom→top color stops, btop-style: each cell row samples the stop at
+/// its height, overriding `style.fg` (e.g. `&.{ .{ .ansi = 2 },
+/// .{ .ansi = 3 }, .{ .ansi = 1 } }` for green→yellow→red). Granularity
+/// is the cell row — a cell has one color, so braille sub-rows share it.
+/// More stops (RGB, on truecolor) make the ramp smoother. Empty = off.
+gradient: []const cell_mod.Color = &.{},
 marker: Marker = .block,
 
 pub const Marker = enum { block, braille };
+
+/// The style for a cell row `from_bottom` rows above the baseline.
+fn rowStyle(self: Sparkline, h: u16, from_bottom: u16) Style {
+    var st = self.style;
+    if (self.gradient.len > 0) {
+        const idx = @min(
+            @as(usize, from_bottom) * self.gradient.len / h,
+            self.gradient.len - 1,
+        );
+        st.fg = self.gradient[idx];
+    }
+    return st;
+}
 
 const eighths = [_][]const u8{ "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
 
@@ -50,19 +69,29 @@ pub fn draw(self: Sparkline, region: Region) void {
 
     switch (self.marker) {
         .block => {
-            const opts: Surface.Options = .{
-                .fg = self.style.fg,
-                .bg = self.style.bg,
-                .attrs = self.style.attrs,
-            };
             const max_e = @as(f64, @floatFromInt(@as(u32, h) * 8));
             for (vals, 0..) |v, i| {
                 const t = std.math.clamp((v - lo) / (hi - lo), 0, 1);
                 const e: u32 = @intFromFloat(@round(t * max_e));
                 const x: u16 = @intCast(i);
                 var r: u16 = 0;
-                while (r < e / 8) : (r += 1) _ = region.writeText(x, h - 1 - r, "█", opts);
-                if (e % 8 > 0) _ = region.writeText(x, h - 1 - @as(u16, @intCast(e / 8)), eighths[e % 8 - 1], opts);
+                while (r < e / 8) : (r += 1) {
+                    const st = self.rowStyle(h, r);
+                    _ = region.writeText(x, h - 1 - r, "█", .{
+                        .fg = st.fg,
+                        .bg = st.bg,
+                        .attrs = st.attrs,
+                    });
+                }
+                if (e % 8 > 0) {
+                    const top: u16 = @intCast(e / 8);
+                    const st = self.rowStyle(h, top);
+                    _ = region.writeText(x, h - 1 - top, eighths[e % 8 - 1], .{
+                        .fg = st.fg,
+                        .bg = st.bg,
+                        .attrs = st.attrs,
+                    });
+                }
             }
         },
         .braille => {
@@ -72,7 +101,12 @@ pub fn draw(self: Sparkline, region: Region) void {
                 const k: u32 = @intFromFloat(@round(t * @as(f64, @floatFromInt(dh))));
                 var d: u32 = 0;
                 while (d < k) : (d += 1) {
-                    braille.dot(region, @intCast(i), dh - 1 - d, self.style);
+                    braille.dot(
+                        region,
+                        @intCast(i),
+                        dh - 1 - d,
+                        self.rowStyle(h, @intCast(d / 4)),
+                    );
                 }
             }
         },
@@ -131,6 +165,43 @@ test "fixed range clamps and the tail wins" {
     (Sparkline{}).draw(Region.full(&s));
     (Sparkline{ .values = &.{ 0, 0 } }).draw(Region.full(&s));
     try std.testing.expectEqualStrings(" ", s.cellAt(0, 0).?.grapheme());
+}
+
+test "gradient colors rows bottom to top" {
+    const gpa = std.testing.allocator;
+    var s = try Surface.init(gpa, 2, 3);
+    defer s.deinit(gpa);
+
+    const ramp = [_]cell_mod.Color{ .{ .ansi = 2 }, .{ .ansi = 3 }, .{ .ansi = 1 } };
+    (Sparkline{
+        .values = &.{ 1.0, 1.0 },
+        .range = .{ 0, 1 },
+        .gradient = &ramp,
+    }).draw(Region.full(&s));
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 2 }, s.cellAt(0, 2).?.style.fg); // bottom: green
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 3 }, s.cellAt(0, 1).?.style.fg);
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 1 }, s.cellAt(0, 0).?.style.fg); // top: red
+
+    // braille marker: same per-row sampling
+    s.clear();
+    (Sparkline{
+        .values = &.{1.0},
+        .range = .{ 0, 1 },
+        .gradient = &ramp,
+        .marker = .braille,
+    }).draw(Region.full(&s));
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 2 }, s.cellAt(0, 2).?.style.fg);
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 1 }, s.cellAt(0, 0).?.style.fg);
+
+    // a short column only reaches the low stops
+    s.clear();
+    (Sparkline{
+        .values = &.{0.34},
+        .range = .{ 0, 1 },
+        .gradient = &ramp,
+    }).draw(Region.full(&s));
+    try std.testing.expectEqual(cell_mod.Color{ .ansi = 2 }, s.cellAt(0, 2).?.style.fg);
+    try std.testing.expectEqual(cell_mod.Color.default, s.cellAt(0, 0).?.style.fg); // nothing drawn up top
 }
 
 test "braille marker packs two filled columns per cell" {

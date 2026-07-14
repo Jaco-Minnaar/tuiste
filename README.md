@@ -173,7 +173,7 @@ application* owns and passes in. Conventions across the layer:
 | `TextArea` | Multi-line editor over wrapped rows, sticky cursor column |
 | `Tabs` | One-row tab bar with click hit-testing |
 | `Gauge` | Progress bar with eighth-block smoothing |
-| `Sparkline` | Rolling area graph; block or braille (btop-style) markers |
+| `Sparkline` | Rolling area graph; block or braille markers, btop-style vertical gradient |
 | `Chart` | Braille XY chart: line/scatter datasets, axes, labels, legend |
 | `Scrollbar` | Track/thumb companion for any scrolling widget |
 | `Separator` | Horizontal/vertical rule with optional label |

@@ -87,9 +87,10 @@ pub fn main(init: std.process.Init) !void {
                 }
                 (widgets.Sparkline{
                     .values = &pols,
-                    .style = .{ .fg = .{ .ansi = 6 } },
+                    // btop gradient: green at the base, red at the peaks
+                    .gradient = &.{ .{ .ansi = 2 }, .{ .ansi = 3 }, .{ .ansi = 1 } },
                     .marker = .braille,
-                }).draw(pane.sub(.{ .x = 1, .y = 5, .width = pane.width() -| 2, .height = 2 }));
+                }).draw(pane.sub(.{ .x = 1, .y = 5, .width = pane.width() -| 2, .height = 3 }));
 
                 _ = (widgets.Paragraph{
                     .text = "Alles hierbo leef in een teken-lus: die spinner en die " ++
